@@ -1,9 +1,9 @@
 // utils/emailTemplates.js
 
 export const userApprovalTemplate = (userName, uniqueId) => {
-    return {
-        subject: " Your Account Has Been Approved!",
-        message: `
+  return {
+    subject: " Your Account Has Been Approved!",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #22c55e;">Account Approved Successfully!</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -25,15 +25,15 @@ export const userApprovalTemplate = (userName, uniqueId) => {
                 </div>
             </div>
         `,
-        type: "approval"
-    };
+    type: "approval",
+  };
 };
 
 // utils/emailTemplates.js
 export const userRejectionTemplate = (userName, rejectionReason) => {
-    return {
-        subject: " Account Approval Request Declined - Octa Finance",
-        message: `
+  return {
+    subject: " Account Approval Request Declined - Octa Finance",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #ef4444;">Account Approval Declined</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -54,20 +54,17 @@ export const userRejectionTemplate = (userName, rejectionReason) => {
                 </div>
             </div>
         `,
-        type: "rejection"
-    };
+    type: "rejection",
+  };
 };
-
-
-
 
 // utils/emailTemplates.js
 
 // Payment Verified Template
 export const paymentVerifiedTemplate = (userName, amount, transactionId) => {
-    return {
-        subject: " Payment Verified Successfully - Octa Finance",
-        message: `
+  return {
+    subject: " Payment Verified Successfully - Octa Finance",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #22c55e;">Payment Verified Successfully!</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -77,7 +74,11 @@ export const paymentVerifiedTemplate = (userName, amount, transactionId) => {
                     <h3 style="color: #166534;">Payment Details:</h3>
                     <p><strong>Amount:</strong> ₹${amount}</p>
                     <p><strong>Status:</strong> <span style="color: #22c55e;">Verified ✅</span></p>
-                    ${transactionId ? `<p><strong>Transaction ID:</strong> ${transactionId}</p>` : ''}
+                    ${
+                      transactionId
+                        ? `<p><strong>Transaction ID:</strong> ${transactionId}</p>`
+                        : ""
+                    }
                     <p><strong>Credited At:</strong> ${new Date().toLocaleString()}</p>
                 </div>
 
@@ -91,15 +92,15 @@ export const paymentVerifiedTemplate = (userName, amount, transactionId) => {
                 </div>
             </div>
         `,
-        type: "payment_verified"
-    };
+    type: "payment_verified",
+  };
 };
 
 // Payment Rejected Template
 export const paymentRejectedTemplate = (userName, amount, rejectionReason) => {
-    return {
-        subject: " Payment Rejected - Octa Finance",
-        message: `
+  return {
+    subject: " Payment Rejected - Octa Finance",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #ef4444;">Payment Rejected</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -120,20 +121,21 @@ export const paymentRejectedTemplate = (userName, amount, rejectionReason) => {
                 </div>
             </div>
         `,
-        type: "payment_rejected"
-    };
-};  
-
-
-
+    type: "payment_rejected",
+  };
+};
 
 // utils/emailTemplates.js
 
 // Withdrawal Approved Template
-export const withdrawalApprovedTemplate = (userName, amount, transactionDetails) => {
-    return {
-        subject: " Withdrawal Approved - Octa Finance",
-        message: `
+export const withdrawalApprovedTemplate = (
+  userName,
+  amount,
+  transactionDetails
+) => {
+  return {
+    subject: " Withdrawal Approved - Octa Finance",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #22c55e;">Withdrawal Approved Successfully!</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -144,7 +146,11 @@ export const withdrawalApprovedTemplate = (userName, amount, transactionDetails)
                     <p><strong>Amount:</strong> ₹${amount}</p>
                     <p><strong>Status:</strong> <span style="color: #22c55e;">Approved ✅</span></p>
                     <p><strong>Processed At:</strong> ${new Date().toLocaleString()}</p>
-                    ${transactionDetails ? `<p><strong>Transaction Details:</strong> ${transactionDetails}</p>` : ''}
+                    ${
+                      transactionDetails
+                        ? `<p><strong>Transaction Details:</strong> ${transactionDetails}</p>`
+                        : ""
+                    }
                 </div>
 
                 <p>The amount will be credited to your bank account within 24-48 hours.</p>
@@ -157,15 +163,19 @@ export const withdrawalApprovedTemplate = (userName, amount, transactionDetails)
                 </div>
             </div>
         `,
-        type: "withdrawal_approved"
-    };
+    type: "withdrawal_approved",
+  };
 };
 
 // Withdrawal Rejected Template
-export const withdrawalRejectedTemplate = (userName, amount, rejectionReason) => {
-    return {
-        subject: " Withdrawal Rejected - Octa Finance",
-        message: `
+export const withdrawalRejectedTemplate = (
+  userName,
+  amount,
+  rejectionReason
+) => {
+  return {
+    subject: " Withdrawal Rejected - Octa Finance",
+    message: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #ef4444;">Withdrawal Request Rejected</h2>
                 <p>Dear <strong>${userName}</strong>,</p>
@@ -186,6 +196,41 @@ export const withdrawalRejectedTemplate = (userName, amount, rejectionReason) =>
                 </div>
             </div>
         `,
-        type: "withdrawal_rejected"
-    };
+    type: "withdrawal_rejected",
+  };
+};
+
+//forgot password template
+export const forgotPasswordTemplate = (userName, resetLink) => {
+  return {
+    subject: " Reset Your Password - Octa Finance",
+    message: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color:#2563eb;">Reset Your Password</h2>
+        <p>Hi <strong>${userName}</strong>,</p>
+        <p>You requested to reset your password.</p>
+
+        <div style="margin:20px 0;">
+          <a href="${resetLink}"
+             style="background:#2563eb;color:white;padding:12px 20px;
+                    text-decoration:none;border-radius:6px;display:inline-block;">
+            Reset Password
+          </a>
+        </div>
+
+        <p>This link will expire in <strong>15 minutes</strong>.</p>
+
+        <p style="color:#64748b;font-size:14px;">
+          If you didn’t request this, please ignore this email.
+        </p>
+
+        <hr />
+        <p style="font-size:14px;color:#64748b;">
+          Regards,<br/>
+          <strong>Octa Finance Team</strong>
+        </p>
+      </div>
+    `,
+    type: "forgot_password",
+  };
 };
