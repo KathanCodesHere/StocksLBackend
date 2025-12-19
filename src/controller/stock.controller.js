@@ -2,6 +2,8 @@ import pool from "../config/database.config.js";
 import cloudinary from "../config/cloudanary.config.js";
 import multer from "multer";
 
+import { sendError } from "../utils/errorHandler.js";
+import { sendSuccess } from "../utils/responseHandler.js";
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -370,15 +372,15 @@ export const deleteStock = async (req, res) => {
   }
 };
 
-// ✅ GET USER'S STOCKS - User gets their own stocks (from req.user.id)
+// GET USER'S STOCKS - User gets their own stocks (from req.user.id)
 export const getUserStocks = async (req, res) => {
   try {
-    const userId = req.user.id; // ✅ User ID from token (logged in user)
+    const userId = Number(req.user.id); // Logged-in user
     const { status = "active", search = "" } = req.query;
 
     console.log(`Fetching stocks for User ID: ${userId}`);
 
-    // Build query
+    //  Build query
     let query = `
       SELECT 
         stock_id,
@@ -389,22 +391,18 @@ export const getUserStocks = async (req, res) => {
         purchase_date,
         image_url,
         status,
-        created_at,
-        ROUND((current_price - stock_buy_price) * quantity, 2) as total_profit_loss,
-        ROUND(((current_price - stock_buy_price) / stock_buy_price) * 100, 2) as profit_loss_percentage
-      FROM stocks 
-      WHERE user_id = ? 
+        created_at
+      FROM stocks
+      WHERE user_id = ?
     `;
 
     const params = [userId];
 
-    // Add status filter
     if (status !== "all") {
       query += ` AND status = ?`;
       params.push(status);
     }
 
-    // Add search filter
     if (search) {
       query += ` AND stock_name LIKE ?`;
       params.push(`%${search}%`);
@@ -414,38 +412,80 @@ export const getUserStocks = async (req, res) => {
 
     const [stocks] = await pool.execute(query, params);
 
-    // Calculate totals
+    // Get user's brokerage / tax %
+    const [percentageRows] = await pool.execute(
+      `SELECT percentage 
+       FROM user_percentage_settings
+       WHERE user_id = ? AND is_active = 1`,
+      [userId]
+    );
+
+    const brokeragePercentage = percentageRows.length
+      ? Number(percentageRows[0].percentage)
+      : 5.0;
+
+    //  Calculations
     let totalInvestment = 0;
     let totalCurrentValue = 0;
-    let totalProfitLoss = 0;
+    let grossProfitLoss = 0;
+    let totalCharges = 0;
 
-    stocks.forEach((stock) => {
-      const investment = stock.stock_buy_price * stock.quantity;
-      const currentValue = stock.current_price * stock.quantity;
+    const enhancedStocks = stocks.map((stock) => {
+      const buyPrice = Number(stock.stock_buy_price);
+      const currentPrice = Number(stock.current_price);
+      const quantity = Number(stock.quantity);
+
+      const investment = buyPrice * quantity;
+      const currentValue = currentPrice * quantity;
+      const profit = currentValue - investment;
+
+      // Charges only if profit exists
+      const charges =
+        profit > 0 ? (profit * brokeragePercentage) / 100 : 0;
 
       totalInvestment += investment;
       totalCurrentValue += currentValue;
-      totalProfitLoss += currentValue - investment;
+      grossProfitLoss += profit;
+      totalCharges += charges;
+
+      return {
+        ...stock,
+        investment: investment.toFixed(2),
+        profit_loss: profit.toFixed(2),
+        charges: charges.toFixed(2),
+        net_profit_loss: (profit - charges).toFixed(2),
+        profit_loss_percentage:
+          investment > 0
+            ? ((profit / investment) * 100).toFixed(2)
+            : "0.00",
+      };
     });
 
-    const totalProfitLossPercentage =
-      totalInvestment > 0 ? (totalProfitLoss / totalInvestment) * 100 : 0;
+    const netProfitLoss = grossProfitLoss - totalCharges;
+    const netProfitLossPercentage =
+      totalInvestment > 0
+        ? (netProfitLoss / totalInvestment) * 100
+        : 0;
 
+    // 🔹 Final response
     res.json({
       success: true,
       user_id: userId,
-      count: stocks.length,
+      count: enhancedStocks.length,
       summary: {
-        total_stocks: stocks.length,
+        total_stocks: enhancedStocks.length,
         total_investment: totalInvestment.toFixed(2),
         total_current_value: totalCurrentValue.toFixed(2),
-        total_profit_loss: totalProfitLoss.toFixed(2),
-        total_profit_loss_percentage: totalProfitLossPercentage.toFixed(2),
+        gross_profit_loss: grossProfitLoss.toFixed(2),
+        brokerage_tax_percentage: brokeragePercentage,
+        total_charges: totalCharges.toFixed(2),
+        net_profit_loss: netProfitLoss.toFixed(2),
+        net_profit_loss_percentage: netProfitLossPercentage.toFixed(2),
       },
-      stocks: stocks,
+      stocks: enhancedStocks,
     });
   } catch (error) {
-    console.error("❌ Get user stocks error:", error);
+    console.error("Get user stocks error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching stocks",
@@ -453,38 +493,40 @@ export const getUserStocks = async (req, res) => {
   }
 };
 
+
+
 //  GET ALL STOCKS - Admin gets all stocks (with user info)
 //  ADMIN - Get All Stocks of Any User
 export const getUserStocksByAdmin = async (req, res) => {
   try {
     const adminId = req.user.id; // Admin from token
-    const userId = parseInt(req.params.userId);
+    const userId = Number(req.params.userId);
     const { status = "all", search = "" } = req.query;
 
     console.log(`Admin ${adminId} fetching stocks of User ${userId}`);
 
-    // Validation
-    if (isNaN(userId)) {
+    // Validate userId
+    if (!userId || isNaN(userId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid User ID",
       });
     }
 
-    // Optional: check user exists
+    //Check user exists
     const [userExists] = await pool.execute(
       `SELECT id FROM users WHERE id = ?`,
       [userId]
     );
 
-    if (userExists.length === 0) {
+    if (!userExists.length) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
 
-    // Build query
+    //Build stock query
     let query = `
       SELECT 
         stock_id,
@@ -495,22 +537,18 @@ export const getUserStocksByAdmin = async (req, res) => {
         purchase_date,
         image_url,
         status,
-        created_at,
-        ROUND((current_price - stock_buy_price) * quantity, 2) AS total_profit_loss,
-        ROUND(((current_price - stock_buy_price) / stock_buy_price) * 100, 2) AS profit_loss_percentage
+        created_at
       FROM stocks
       WHERE user_id = ?
     `;
 
     const params = [userId];
 
-    // Status filter
     if (status !== "all") {
       query += ` AND status = ?`;
       params.push(status);
     }
 
-    // Search filter
     if (search) {
       query += ` AND stock_name LIKE ?`;
       params.push(`%${search}%`);
@@ -520,42 +558,146 @@ export const getUserStocksByAdmin = async (req, res) => {
 
     const [stocks] = await pool.execute(query, params);
 
-    // Summary calculations
+    //  Get brokerage / tax percentage
+    const [percentageRows] = await pool.execute(
+      `SELECT percentage 
+       FROM user_percentage_settings 
+       WHERE user_id = ? AND is_active = 1`,
+      [userId]
+    );
+
+    const brokeragePercentage = percentageRows.length
+      ? Number(percentageRows[0].percentage)
+      : 5.0;
+
+    // Calculations
     let totalInvestment = 0;
     let totalCurrentValue = 0;
-    let totalProfitLoss = 0;
+    let grossProfitLoss = 0;
+    let totalCharges = 0;
 
-    stocks.forEach((stock) => {
-      const investment = stock.stock_buy_price * stock.quantity;
-      const currentValue = stock.current_price * stock.quantity;
+    const enhancedStocks = stocks.map((stock) => {
+      const buyPrice = Number(stock.stock_buy_price);
+      const currentPrice = Number(stock.current_price);
+      const quantity = Number(stock.quantity);
+
+      const investment = buyPrice * quantity;
+      const currentValue = currentPrice * quantity;
+      const profit = currentValue - investment;
+
+      // Charges only on profit
+      const charges =
+        profit > 0 ? (profit * brokeragePercentage) / 100 : 0;
 
       totalInvestment += investment;
       totalCurrentValue += currentValue;
-      totalProfitLoss += currentValue - investment;
+      grossProfitLoss += profit;
+      totalCharges += charges;
+
+      return {
+        ...stock,
+        investment: investment.toFixed(2),
+        profit_loss: profit.toFixed(2),
+        charges: charges.toFixed(2),
+        net_profit_loss: (profit - charges).toFixed(2),
+        profit_loss_percentage:
+          investment > 0 ? ((profit / investment) * 100).toFixed(2) : "0.00",
+      };
     });
 
-    const totalProfitLossPercentage =
-      totalInvestment > 0 ? (totalProfitLoss / totalInvestment) * 100 : 0;
+    const netProfitLoss = grossProfitLoss - totalCharges;
+    const netProfitLossPercentage =
+      totalInvestment > 0
+        ? (netProfitLoss / totalInvestment) * 100
+        : 0;
 
+    // Final response
     res.json({
       success: true,
       accessed_by_admin: adminId,
       user_id: userId,
-      count: stocks.length,
+      count: enhancedStocks.length,
       summary: {
-        total_stocks: stocks.length,
+        total_stocks: enhancedStocks.length,
         total_investment: totalInvestment.toFixed(2),
         total_current_value: totalCurrentValue.toFixed(2),
-        total_profit_loss: totalProfitLoss.toFixed(2),
-        total_profit_loss_percentage: totalProfitLossPercentage.toFixed(2),
+        gross_profit_loss: grossProfitLoss.toFixed(2),
+        brokerage_tax_percentage: brokeragePercentage,
+        total_charges: totalCharges.toFixed(2),
+        net_profit_loss: netProfitLoss.toFixed(2),
+        net_profit_loss_percentage: netProfitLossPercentage.toFixed(2),
       },
-      stocks,
+      stocks: enhancedStocks,
     });
   } catch (error) {
-    console.error("Admin get user stocks error:", error);
+    console.error(" Admin get user stocks error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching user stocks",
     });
+  }
+};
+
+//admin set percentage
+export const setUserPercentage = async (req, res) => {
+  try {
+    const { user_id, percentage } = req.body;
+
+    if (!user_id || percentage === undefined) {
+      return sendError(res, 400, "User ID and percentage are required");
+    }
+
+    if (isNaN(percentage) || percentage < 0) {
+      return sendError(res, 400, "Invalid percentage value");
+    }
+
+    // Check user exists
+    const [users] = await pool.execute(`SELECT id FROM users WHERE id = ?`, [
+      user_id,
+    ]);
+
+    if (users.length === 0) {
+      return sendError(res, 404, "User not found");
+    }
+
+    // UPSERT (insert or update)
+    await pool.execute(
+      `
+      INSERT INTO user_percentage_settings (user_id, percentage)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE
+        percentage = VALUES(percentage),
+        is_active = 1
+      `,
+      [user_id, percentage]
+    );
+
+    sendSuccess(
+      res,
+      {
+        user_id,
+        percentage,
+      },
+      "User brokerage & tax percentage set successfully"
+    );
+  } catch (error) {
+    console.error(error);
+    sendError(res, 500, "Failed to set percentage");
+  }
+};
+
+//get user percentage
+export const getUserPercentageByAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [rows] = await pool.execute(
+      `SELECT percentage, is_active FROM user_percentage_settings WHERE user_id = ?`,
+      [userId]
+    );
+
+    sendSuccess(res, rows[0] || { percentage: 5.0 }, "User percentage fetched");
+  } catch (error) {
+    sendError(res, 500, "Error fetching percentage");
   }
 };

@@ -2,19 +2,16 @@ import cloudinary from "../config/cloudanary.config.js";
 
 import pool from "../config/database.config.js";
 
-
-
-
 export const createPaymentMethod = async (req, res) => {
   try {
-  const {
-  account_number = null,   
-  ifsc_code = null,        
-  bank_name = null,
-  branch_name = null,
-  upi_id = null,
-  is_active = 1
-} = req.body || {};        
+    const {
+      account_number = null,
+      ifsc_code = null,
+      bank_name = null,
+      branch_name = null,
+      upi_id = null,
+      is_active = 1,
+    } = req.body || {};
 
     let qr_image_url = null;
 
@@ -23,8 +20,8 @@ export const createPaymentMethod = async (req, res) => {
       const uploadResult = await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
-            folder: 'payment_qr',
-            public_id: `qr_${Date.now()}`
+            folder: "payment_qr",
+            public_id: `qr_${Date.now()}`,
           },
           (error, result) => {
             if (error) reject(error);
@@ -43,14 +40,13 @@ export const createPaymentMethod = async (req, res) => {
         bank_name, branch_name, upi_id, is_active) 
        VALUES ( ?, ?, ?, ?, ?, ?, ?)`,
       [
-
         qr_image_url,
         account_number || null,
         ifsc_code || null,
         bank_name || null,
         branch_name || null,
         upi_id || null,
-        is_active
+        is_active,
       ]
     );
 
@@ -58,14 +54,13 @@ export const createPaymentMethod = async (req, res) => {
       success: true,
       message: "Payment method created",
       id: result.insertId,
-      qr_image_url: qr_image_url
+      qr_image_url: qr_image_url,
     });
-
   } catch (error) {
     console.error(error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error"
+    res.status(500).json({
+      success: false,
+      message: "Server error",
     });
   }
 };
@@ -82,13 +77,11 @@ export const getAllPaymentMethods = async (req, res) => {
   }
 };
 
-
-
 export const updatePaymentMethod = async (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body || {};
-    
+
     // ✅ Convert all undefined to null
     const account_number = body.account_number ?? null;
     const ifsc_code = body.ifsc_code ?? null;
@@ -103,8 +96,8 @@ export const updatePaymentMethod = async (req, res) => {
       const uploadResult = await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
-            folder: 'payment_qr',
-            public_id: `qr_${id}_${Date.now()}`
+            folder: "payment_qr",
+            public_id: `qr_${id}_${Date.now()}`,
           },
           (error, result) => {
             if (error) reject(error);
@@ -118,7 +111,7 @@ export const updatePaymentMethod = async (req, res) => {
 
     if (!qr_image_url) {
       const [oldData] = await pool.execute(
-        'SELECT qr_image_url FROM admin_payment_methods WHERE id = ?',
+        "SELECT qr_image_url FROM admin_payment_methods WHERE id = ?",
         [id]
       );
       qr_image_url = oldData[0]?.qr_image_url ?? null;
@@ -143,28 +136,27 @@ export const updatePaymentMethod = async (req, res) => {
         branch_name ?? null,
         upi_id ?? null,
         is_active ?? 1,
-        id
+        id,
       ]
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
-        message: "Payment method not found"
+        message: "Payment method not found",
       });
     }
 
     res.json({
       success: true,
       message: "Updated",
-      id: id
+      id: id,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({
       success: false,
-      message: "Server error"
+      message: "Server error",
     });
   }
 };
