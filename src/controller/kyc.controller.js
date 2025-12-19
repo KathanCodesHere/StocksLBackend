@@ -3,10 +3,12 @@ import { sendSuccess } from "../utils/responseHandler.js";
 import pool from "../config/database.config.js";
 import cloudinary from "../config/cloudanary.config.js";
 
-// POST - Create/Submit KYC
+//POST: submit kyc 
 export const createKYC = async (req, res) => {
   try {
     const userId = req.user.id;
+
+    //IMPORTANT: destructure AFTER multer
     const {
       full_name,
       email,
@@ -17,76 +19,77 @@ export const createKYC = async (req, res) => {
       pan_number,
       account_no,
       bank,
-      ifsc
+      ifsc,
     } = req.body;
-   
-    console.log(req.files)
-    console.log("City received:", city);
 
-    // Validate required fields
+    // console.log("BODY:", req.body); // DEBUG
+    // console.log("FILES:", req.files);
+
+    //Required validation
     if (!full_name || !aadhaar_no || !pan_number) {
-      return sendError(res, 400, 'Full name, Aadhaar and PAN are required');
+      return sendError(res, 400, "Full name, Aadhaar and PAN are required");
     }
+   const rawCity =
+  req.body.city ??
+  req.body["city "] ??
+  req.body["City"] ??
+  null;
 
-    //  FIX: Handle city
-    const finalCity = city && city.trim() !== '' ? city : 'Not Provided';
-    console.log(finalCity)
-    // Check if KYC already exists for user
+const finalCity =
+  typeof rawCity === "string" && rawCity.trim().length > 0
+    ? rawCity.trim()
+    : "Not Provided";
+
+
+    // Check existing KYC
     const [existing] = await pool.execute(
-      'SELECT * FROM kyc WHERE user_id = ?',
+      "SELECT kyc_id FROM kyc WHERE user_id = ?",
       [userId]
     );
 
-    if (existing.length > 0) {
-      return sendError(res, 400, 'KYC already submitted for this user');
+    if (existing.length) {
+      return sendError(res, 400, "KYC already submitted for this user");
     }
 
-    // Upload Aadhaar image to Cloudinary
+    // ================= UPLOAD AADHAAR =================
     let aadhaar_image_url = null;
-    if (req.files?.aadhaar_image) {
-      const uploadResult = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
+    if (req.files?.aadhaar_image?.[0]) {
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
           {
-            folder: 'kyc_docs',
+            folder: "kyc_docs",
             public_id: `aadhaar_${userId}_${Date.now()}`,
-            resource_type: 'image'
           },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
+          (err, res) => (err ? reject(err) : resolve(res))
         );
-        uploadStream.end(req.files.aadhaar_image[0].buffer);
+        stream.end(req.files.aadhaar_image[0].buffer);
       });
-      aadhaar_image_url = uploadResult.secure_url;
+      aadhaar_image_url = result.secure_url;
     }
 
-    // Upload PAN image to Cloudinary
+    // ================= UPLOAD PAN =================
     let pancard_image_url = null;
-    if (req.files?.pancard_image) {
-      const uploadResult = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
+    if (req.files?.pancard_image?.[0]) {
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
           {
-            folder: 'kyc_docs',
+            folder: "kyc_docs",
             public_id: `pan_${userId}_${Date.now()}`,
-            resource_type: 'image'
           },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
+          (err, res) => (err ? reject(err) : resolve(res))
         );
-        uploadStream.end(req.files.pancard_image[0].buffer);
+        stream.end(req.files.pancard_image[0].buffer);
       });
-      pancard_image_url = uploadResult.secure_url;
+      pancard_image_url = result.secure_url;
     }
 
-    // Insert KYC into database
+    // ================= INSERT =================
     const [result] = await pool.execute(
-      `INSERT INTO kyc 
-       (full_name, email, address, city, state, aadhaar_no, pan_number,
-        account_no, bank, ifsc, aadhaar_image, pancard_image, user_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO kyc (
+        full_name, email, address, city, state,
+        aadhaar_no, pan_number, account_no,
+        bank, ifsc, aadhaar_image, pancard_image, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         full_name,
         email || null,
@@ -100,44 +103,41 @@ export const createKYC = async (req, res) => {
         ifsc || null,
         aadhaar_image_url,
         pancard_image_url,
-        userId
+        userId,
       ]
     );
 
-    //  FIX: Try to update kyc_status, but don't fail if column doesn't exist
-    try {
-      await pool.execute(
-        'UPDATE users SET kyc_status = "pending" WHERE id = ?',
-        [userId]
-      );
-      console.log(" kyc_status updated");
-    } catch (updateError) {
-      console.log("Could not update kyc_status (column may not exist):", updateError.message);
-      // Continue without failing
-    }
+    // ================= UPDATE USER =================
+    // await pool.execute(
+    //   `UPDATE users SET kyc_status = 'pending' WHERE id = ?`,
+    //   [userId]
+    // );
 
-    sendSuccess(res, {
-      kyc_id: result.insertId,
-      user_id: userId,
-      status: 'submitted'
-    }, 'KYC submitted successfully and under review');
-
+    return sendSuccess(
+      res,
+      {
+        kyc_id: result.insertId,
+        status: "submitted",
+      },
+      "KYC submitted successfully"
+    );
   } catch (error) {
-    console.error('KYC submit error:', error);
-    
-    if (error.code === 'ER_DUP_ENTRY') {
-      return sendError(res, 400, 'Aadhaar or PAN already registered');
+    console.error("KYC Error:", error);
+
+    if (error.code === "ER_DUP_ENTRY") {
+      return sendError(res, 400, "Aadhaar or PAN already registered");
     }
-    
-    sendError(res, 500, 'Error submitting KYC');
+
+    return sendError(res, 500, "Error submitting KYC");
   }
 };
+
 // GET - Get KYC details for logged in user
 export const getKYC = async (req, res) => {
   try {
     // Check if user is admin
-    if (req.user.userType !== 'admin') {
-      return sendError(res, 403, 'Admin access required');
+    if (req.user.userType !== "admin") {
+      return sendError(res, 403, "Admin access required");
     }
 
     const [kycData] = await pool.execute(
@@ -165,14 +165,54 @@ export const getKYC = async (req, res) => {
        ORDER BY k.kyc_id DESC`
     );
 
-    sendSuccess(res, {
-      total: kycData.length,
-      data: kycData
-    }, 'All KYC data retrieved successfully');
-
+    sendSuccess(
+      res,
+      {
+        total: kycData.length,
+        data: kycData,
+      },
+      "All KYC data retrieved successfully"
+    );
   } catch (error) {
-    console.error('Get all KYC error:', error);
-    sendError(res, 500, 'Error fetching KYC data');
+    console.error("Get all KYC error:", error);
+    sendError(res, 500, "Error fetching KYC data");
   }
 };
+// GET - Get KYC details for logged in user
+export const getKYCByUser = async (req, res) => {
+  try {
+    const userId = Number(req.user.id); //force number
 
+    console.log("Fetching KYC for user:", userId);
+
+    const [kyc] = await pool.execute(
+      `SELECT 
+        k.kyc_id,
+        k.full_name,
+        k.email,
+        k.address,
+        k.city,
+        k.state,
+        k.aadhaar_no,
+        k.pan_number,
+        k.account_no,
+        k.bank,
+        k.ifsc,
+        k.aadhaar_image,
+        k.pancard_image
+      FROM kyc k
+      WHERE k.user_id = ?
+      LIMIT 1`,
+      [userId]
+    );
+
+    if (kyc.length === 0) {
+      return sendError(res, 404, "KYC not submitted yet");
+    }
+
+    sendSuccess(res, kyc[0], "KYC details fetched successfully");
+  } catch (error) {
+    console.error("Get my KYC error:", error);
+    sendError(res, 500, "Error fetching KYC details");
+  }
+};
