@@ -386,42 +386,30 @@ export const getUserProfile = async (req, res) => {
 // Simple - Delete user by ID (Admin only)
 export const deleteUserByAdmin = async (req, res) => {
   try {
-    const { userId } = req.body; // Simple - direct userId
+    const { userId } = req.body;
 
     if (!userId) {
       return sendError(res, 400, "User ID required");
     }
 
-    // Check if user exists
-    const [user] = await pool.execute(
-      `SELECT id, email FROM users WHERE id = ?`,
-      [userId]
-    );
+    const [user] = await pool.execute(`SELECT id FROM users WHERE id = ?`, [
+      userId,
+    ]);
 
     if (user.length === 0) {
       return sendError(res, 404, "User not found");
     }
 
-    // Simple delete query
-    const [result] = await pool.execute(`DELETE FROM users WHERE id = ?`, [
-      userId,
-    ]);
+    // delete dependent tables first
+    await pool.execute(`DELETE FROM kyc WHERE user_id = ?`, [userId]);
 
-    if (result.affectedRows === 0) {
-      return sendError(res, 500, "Failed to delete user");
-    }
+    // delete user
+    await pool.execute(`DELETE FROM users WHERE id = ?`, [userId]);
 
-    sendSuccess(
-      res,
-      {
-        deletedUserId: userId,
-        message: "User deleted successfully",
-      },
-      "User deleted"
-    );
+    return sendSuccess(res, { userId }, "User deleted successfully");
   } catch (error) {
     console.error("Delete error:", error);
-    sendError(res, 500, "Delete failed");
+    return sendError(res, 500, "Delete failed");
   }
 };
 
