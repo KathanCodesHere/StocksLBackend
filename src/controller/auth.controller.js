@@ -458,24 +458,27 @@ export const forgotPassword = async (req, res) => {
     );
 
     const expiry = new Date(Date.now() + 15 * 60 * 1000);
-
+console.log("User found =>", user);
+console.log("UserType =>", userType);
     const table = userType === "admin" ? "admins" : "users";
-
+    console.log("Updating table =>", table);
     await pool.execute(
       `UPDATE ${table} SET reset_token = ?, reset_token_expiry = ? WHERE id = ?`,
       [resetToken, expiry, user.id]
     );
 
+    console.log(` Generated reset token for ${user.email}`);
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-    //SEND EMAIL
-    const emailTemplate = forgotPasswordTemplate(user.name, resetLink);
+    console.log(` Password reset link for ${user.email}: ${resetLink}`);
+    // //SEND EMAIL
+    // const emailTemplate = forgotPasswordTemplate(user.name, resetLink);
 
-    await sendEmail({
-      to: user.email,
-      subject: emailTemplate.subject,
-      html: emailTemplate.message,
-    });
+    // await sendEmail({
+    //   to: user.email,
+    //   subject: emailTemplate.subject,
+    //   html: emailTemplate.message,
+    // });
 
     sendSuccess(
       res,
