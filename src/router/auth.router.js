@@ -1,8 +1,7 @@
 import express from "express";
 import {
-  forgotPassword,
   registerUser,
-  resetPassword,
+  adminResetUserPassword,
 } from "../controller/auth.controller.js";
 import { getPendingUsers } from "../controller/auth.controller.js";
 import { universalLogin } from "../controller/auth.controller.js";
@@ -65,9 +64,12 @@ router.delete(
 );
 router.post("/updateadminpass", postAdminpasswordReset);
 
-//forgot password
-router.post("/forgotPassword", forgotPassword);
+//only admin reset password
+router.post(
+  "/admin/reset-user-password",
+  verifyToken, // verifies token
+  agenAdmintonly, // ensures role = admin
+  adminResetUserPassword
+);
 
-//reset password
-router.post("/resetPassword", resetPassword);
 export default router;

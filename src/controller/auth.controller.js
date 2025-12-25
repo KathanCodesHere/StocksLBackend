@@ -413,153 +413,51 @@ export const deleteUserByAdmin = async (req, res) => {
   }
 };
 
-//forgot password
-export const forgotPassword = async (req, res) => {
+//only admin can reset user's password 
+
+export const adminResetUserPassword = async (req, res) => {
   try {
-    const { identifier } = req.body;
-
-    if (!identifier) {
-      return sendError(res, 400, "Email or Unique ID is required");
+    const adminId = req.user?.id;
+    const role = req.user?.userType;
+    if (role !== "admin") {
+      return sendError(res, 403, "Only admin can reset passwords");
     }
 
-    let user = null;
-    let userType = null;
+    const { userId, newPassword } = req.body;
 
-    // ADMIN
-    const [admins] = await pool.execute(
-      `SELECT id, email, name FROM admins WHERE email = ? AND is_active = 1`,
-      [identifier]
-    );
-
-    if (admins.length) {
-      user = admins[0];
-      userType = "admin";
-    } else {
-      const [users] = await pool.execute(
-        `SELECT id, email, name FROM users WHERE email = ? OR unique_id = ?`,
-        [identifier, identifier]
-      );
-
-      if (users.length) {
-        user = users[0];
-        userType = "user";
-      }
+    if (!userId || !newPassword) {
+      return sendError(res, 400, "User ID and new password are required");
     }
 
-    if (!user) {
-      return sendError(res, 404, "User not found");
-    }
-
-    //Generate Token
-    const resetToken = jwt.sign(
-      { id: user.id, type: userType },
-      "RESET_SECRET_123",
-      { expiresIn: "15m" }
-    );
-
-    const expiry = new Date(Date.now() + 15 * 60 * 1000);
-console.log("User found =>", user);
-console.log("UserType =>", userType);
-    const table = userType === "admin" ? "admins" : "users";
-    console.log("Updating table =>", table);
-    await pool.execute(
-      `UPDATE ${table} SET reset_token = ?, reset_token_expiry = ? WHERE id = ?`,
-      [resetToken, expiry, user.id]
-    );
-
-    console.log(` Generated reset token for ${user.email}`);
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-
-    console.log(` Password reset link for ${user.email}: ${resetLink}`);
-    // //SEND EMAIL
-    // const emailTemplate = forgotPasswordTemplate(user.name, resetLink);
-
-    // await sendEmail({
-    //   to: user.email,
-    //   subject: emailTemplate.subject,
-    //   html: emailTemplate.message,
-    // });
-
-    sendSuccess(
-      res,
-      {
-        email: user.email,
-        userType,
-        reset_link: resetLink, // remove in production
-        ressetToken: resetToken,
-      },
-      "Password reset link sent to your email"
-    );
-  } catch (error) {
-    console.error("Forgot password error:", error);
-    sendError(res, 500, "Error processing forgot password");
-  }
-};
-
-//reset password
-export const resetPassword = async (req, res) => {
-  try {
-    const { token, newPassword } = req.body;
-
-    if (!token || !newPassword) {
-      return sendError(res, 400, "Token and new password are required");
-    }
-
-    //Password strength check
     if (newPassword.length < 8) {
       return sendError(res, 400, "Password must be at least 8 characters long");
     }
 
-    //  Verify token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, "RESET_SECRET_123");
-    } catch {
-      return sendError(res, 400, "Invalid or expired token");
-    }
+    // Check if user exists
+    const [users] = await pool.execute(`SELECT id FROM users WHERE id = ?`, [
+      userId,
+    ]);
 
-    const { id, type } = decoded;
-
-    //Identify table safely
-    const table = type === "admin" ? "admins" : "users";
-
-    const [rows] = await pool.execute(
-      `SELECT reset_token, reset_token_expiry FROM ${table} WHERE id = ?`,
-      [id]
-    );
-
-    if (!rows.length) {
+    if (!users.length) {
       return sendError(res, 404, "User not found");
     }
 
-    const record = rows[0];
-
-    // Extra safety
-    if (!record.reset_token) {
-      return sendError(res, 400, "Reset token already used");
-    }
-
-    if (
-      record.reset_token !== token ||
-      new Date(record.reset_token_expiry) < new Date()
-    ) {
-      return sendError(res, 400, "Token expired or invalid");
-    }
-
-    // Hash password
+    // Hash new password
     const password_hash = await bcrypt.hash(newPassword, 10);
 
-    //Update password & invalidate token
+    // Update password
     await pool.execute(
-      `UPDATE ${table}
+      `UPDATE users
        SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL
        WHERE id = ?`,
-      [password_hash, id]
+      [password_hash, userId]
     );
 
-    sendSuccess(res, null, "Password reset successfully");
+    console.log(`Admin ${adminId} reset password of User ${userId}`);
+
+    return sendSuccess(res, null, "User password reset successfully");
   } catch (error) {
-    console.error("Reset password error:", error);
-    sendError(res, 500, "Reset password failed");
+    console.error("Admin reset password error:", error);
+    return sendError(res, 500, "Failed to reset user password");
   }
 };
