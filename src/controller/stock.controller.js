@@ -288,7 +288,7 @@ export const updateStock = (req, res) => {
   });
 };
 
-// ✅ DELETE STOCK - Admin deletes user's stock (User ID from body)
+//  DELETE STOCK - Admin deletes user's stock (User ID from body)
 export const deleteStock = async (req, res) => {
   try {
     const adminId = req.user.id; // Admin ID from token
@@ -373,14 +373,15 @@ export const deleteStock = async (req, res) => {
 };
 
 // GET USER'S STOCKS - User gets their own stocks (from req.user.id)
+// GET USER'S OWN STOCKS (Same logic as Admin API with charges breakdown)
 export const getUserStocks = async (req, res) => {
   try {
-    const userId = Number(req.user.id); // Logged-in user
+    const userId = Number(req.user.id);
     const { status = "active", search = "" } = req.query;
 
     console.log(`Fetching stocks for User ID: ${userId}`);
 
-    //  Build query
+    // Build stock query
     let query = `
       SELECT 
         stock_id,
@@ -412,62 +413,79 @@ export const getUserStocks = async (req, res) => {
 
     const [stocks] = await pool.execute(query, params);
 
-    // Get user's brokerage / tax %
+    // Get latest active user charges
     const [percentageRows] = await pool.execute(
-      `SELECT percentage 
+      `SELECT brokerage_percent, gst_percent, stt_percent, transaction_tax_percent
        FROM user_percentage_settings
-       WHERE user_id = ? AND is_active = 1`,
+       WHERE user_id = ? AND is_active = 1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
       [userId]
     );
 
-    const brokeragePercentage = percentageRows.length
-      ? Number(percentageRows[0].percentage)
-      : 5.0;
+    const charges = percentageRows.length
+      ? percentageRows[0]
+      : {
+          brokerage_percent: 5,
+          gst_percent: 0,
+          stt_percent: 0,
+          transaction_tax_percent: 0,
+        };
 
-    //  Calculations
+    // Totals
     let totalInvestment = 0;
     let totalCurrentValue = 0;
     let grossProfitLoss = 0;
-    let totalCharges = 0;
+    let finalCharges = 0;
 
     const enhancedStocks = stocks.map((stock) => {
-      const buyPrice = Number(stock.stock_buy_price);
-      const currentPrice = Number(stock.current_price);
-      const quantity = Number(stock.quantity);
+      const buy = Number(stock.stock_buy_price);
+      const cur = Number(stock.current_price);
+      const qty = Number(stock.quantity);
 
-      const investment = buyPrice * quantity;
-      const currentValue = currentPrice * quantity;
+      const investment = buy * qty;
+      const currentValue = cur * qty;
       const profit = currentValue - investment;
 
-      // Charges only if profit exists
-      const charges =
-        profit > 0 ? (profit * brokeragePercentage) / 100 : 0;
+      // Charges applied only on profit
+      const brokerage =
+        profit > 0 ? (profit * charges.brokerage_percent) / 100 : 0;
+      const gst = brokerage * (charges.gst_percent / 100);
+      const stt = profit > 0 ? (profit * charges.stt_percent) / 100 : 0;
+      const txnTax =
+        profit > 0 ? (profit * charges.transaction_tax_percent) / 100 : 0;
+
+      const totalChargeForStock = brokerage + gst + stt + txnTax;
 
       totalInvestment += investment;
       totalCurrentValue += currentValue;
       grossProfitLoss += profit;
-      totalCharges += charges;
+      finalCharges += totalChargeForStock;
 
       return {
         ...stock,
+
         investment: investment.toFixed(2),
         profit_loss: profit.toFixed(2),
-        charges: charges.toFixed(2),
-        net_profit_loss: (profit - charges).toFixed(2),
+
+        charges_breakdown: {
+          brokerage: brokerage.toFixed(2),
+          gst: gst.toFixed(2),
+          stt: stt.toFixed(2),
+          transaction_tax: txnTax.toFixed(2),
+        },
+
+        charges: totalChargeForStock.toFixed(2),
+        net_profit_loss: (profit - totalChargeForStock).toFixed(2),
         profit_loss_percentage:
-          investment > 0
-            ? ((profit / investment) * 100).toFixed(2)
-            : "0.00",
+          investment > 0 ? ((profit / investment) * 100).toFixed(2) : "0.00",
       };
     });
 
-    const netProfitLoss = grossProfitLoss - totalCharges;
+    const netProfitLoss = grossProfitLoss - finalCharges;
     const netProfitLossPercentage =
-      totalInvestment > 0
-        ? (netProfitLoss / totalInvestment) * 100
-        : 0;
+      totalInvestment > 0 ? (netProfitLoss / totalInvestment) * 100 : 0;
 
-    // 🔹 Final response
     res.json({
       success: true,
       user_id: userId,
@@ -477,10 +495,14 @@ export const getUserStocks = async (req, res) => {
         total_investment: totalInvestment.toFixed(2),
         total_current_value: totalCurrentValue.toFixed(2),
         gross_profit_loss: grossProfitLoss.toFixed(2),
-        brokerage_tax_percentage: brokeragePercentage,
-        total_charges: totalCharges.toFixed(2),
+        total_charges: finalCharges.toFixed(2),
         net_profit_loss: netProfitLoss.toFixed(2),
         net_profit_loss_percentage: netProfitLossPercentage.toFixed(2),
+
+        brokerage_percent: charges.brokerage_percent,
+        gst_percent: charges.gst_percent,
+        stt_percent: charges.stt_percent,
+        transaction_tax_percent: charges.transaction_tax_percent,
       },
       stocks: enhancedStocks,
     });
@@ -494,8 +516,6 @@ export const getUserStocks = async (req, res) => {
 };
 
 
-
-//  GET ALL STOCKS - Admin gets all stocks (with user info)
 //  ADMIN - Get All Stocks of Any User
 export const getUserStocksByAdmin = async (req, res) => {
   try {
@@ -560,56 +580,74 @@ export const getUserStocksByAdmin = async (req, res) => {
 
     //  Get brokerage / tax percentage
     const [percentageRows] = await pool.execute(
-      `SELECT percentage 
-       FROM user_percentage_settings 
-       WHERE user_id = ? AND is_active = 1`,
+      `SELECT brokerage_percent, gst_percent, stt_percent, transaction_tax_percent
+   FROM user_percentage_settings
+   WHERE user_id = ? AND is_active = 1
+   ORDER BY updated_at DESC
+   LIMIT 1`,
       [userId]
     );
 
-    const brokeragePercentage = percentageRows.length
-      ? Number(percentageRows[0].percentage)
-      : 5.0;
+    const charges = percentageRows.length
+      ? percentageRows[0]
+      : {
+          brokerage_percent: 5,
+          gst_percent: 0,
+          stt_percent: 0,
+          transaction_tax_percent: 0,
+        };
 
     // Calculations
     let totalInvestment = 0;
     let totalCurrentValue = 0;
     let grossProfitLoss = 0;
-    let totalCharges = 0;
+    let finalCharges = 0; // <-- define here
 
     const enhancedStocks = stocks.map((stock) => {
-      const buyPrice = Number(stock.stock_buy_price);
-      const currentPrice = Number(stock.current_price);
-      const quantity = Number(stock.quantity);
+      const buy = Number(stock.stock_buy_price);
+      const cur = Number(stock.current_price);
+      const qty = Number(stock.quantity);
 
-      const investment = buyPrice * quantity;
-      const currentValue = currentPrice * quantity;
+      const investment = buy * qty;
+      const currentValue = cur * qty;
       const profit = currentValue - investment;
 
-      // Charges only on profit
-      const charges =
-        profit > 0 ? (profit * brokeragePercentage) / 100 : 0;
+      const brokerage =
+        profit > 0 ? (profit * charges.brokerage_percent) / 100 : 0;
+      const gst = brokerage * (charges.gst_percent / 100);
+      const stt = profit > 0 ? (profit * charges.stt_percent) / 100 : 0;
+      const txnTax =
+        profit > 0 ? (profit * charges.transaction_tax_percent) / 100 : 0;
+
+      const totalChargeForStock = brokerage + gst + stt + txnTax;
 
       totalInvestment += investment;
       totalCurrentValue += currentValue;
       grossProfitLoss += profit;
-      totalCharges += charges;
+      finalCharges += totalChargeForStock;
 
       return {
         ...stock,
+
         investment: investment.toFixed(2),
         profit_loss: profit.toFixed(2),
-        charges: charges.toFixed(2),
-        net_profit_loss: (profit - charges).toFixed(2),
-        profit_loss_percentage:
-          investment > 0 ? ((profit / investment) * 100).toFixed(2) : "0.00",
+
+        // NEW BREAKDOWN BLOCK
+        charges_breakdown: {
+          brokerage: brokerage.toFixed(2),
+          gst: gst.toFixed(2),
+          stt: stt.toFixed(2),
+          transaction_tax: txnTax.toFixed(2),
+        },
+
+        charges: totalChargeForStock.toFixed(2),
+        net_profit_loss: (profit - totalChargeForStock).toFixed(2),
       };
     });
 
-    const netProfitLoss = grossProfitLoss - totalCharges;
+    const netProfitLoss = grossProfitLoss - finalCharges;
     const netProfitLossPercentage =
-      totalInvestment > 0
-        ? (netProfitLoss / totalInvestment) * 100
-        : 0;
+      totalInvestment > 0 ? (netProfitLoss / totalInvestment) * 100 : 0;
 
     // Final response
     res.json({
@@ -622,10 +660,14 @@ export const getUserStocksByAdmin = async (req, res) => {
         total_investment: totalInvestment.toFixed(2),
         total_current_value: totalCurrentValue.toFixed(2),
         gross_profit_loss: grossProfitLoss.toFixed(2),
-        brokerage_tax_percentage: brokeragePercentage,
-        total_charges: totalCharges.toFixed(2),
+        total_charges: finalCharges.toFixed(2), // <-- corrected
         net_profit_loss: netProfitLoss.toFixed(2),
         net_profit_loss_percentage: netProfitLossPercentage.toFixed(2),
+
+        brokerage_percent: charges.brokerage_percent,
+        gst_percent: charges.gst_percent,
+        stt_percent: charges.stt_percent,
+        transaction_tax_percent: charges.transaction_tax_percent,
       },
       stocks: enhancedStocks,
     });
@@ -639,16 +681,28 @@ export const getUserStocksByAdmin = async (req, res) => {
 };
 
 //admin set percentage
+
 export const setUserPercentage = async (req, res) => {
   try {
-    const { user_id, percentage } = req.body;
+    const {
+      user_id,
+      brokerage_percent,
+      gst_percent,
+      stt_percent,
+      transaction_tax_percent,
+    } = req.body;
 
-    if (!user_id || percentage === undefined) {
-      return sendError(res, 400, "User ID and percentage are required");
-    }
+    if (!user_id) return sendError(res, 400, "User ID is required");
 
-    if (isNaN(percentage) || percentage < 0) {
-      return sendError(res, 400, "Invalid percentage value");
+    const values = [
+      brokerage_percent,
+      gst_percent,
+      stt_percent,
+      transaction_tax_percent,
+    ];
+
+    if (values.some((v) => v === undefined || isNaN(v) || v < 0)) {
+      return sendError(res, 400, "Invalid percentage values");
     }
 
     // Check user exists
@@ -656,48 +710,100 @@ export const setUserPercentage = async (req, res) => {
       user_id,
     ]);
 
-    if (users.length === 0) {
-      return sendError(res, 404, "User not found");
-    }
+    if (users.length === 0) return sendError(res, 404, "User not found");
 
-    // UPSERT (insert or update)
+    // UPSERT
     await pool.execute(
       `
-      INSERT INTO user_percentage_settings (user_id, percentage)
-      VALUES (?, ?)
+      INSERT INTO user_percentage_settings
+      (user_id, brokerage_percent, gst_percent, stt_percent, transaction_tax_percent)
+      VALUES (?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        percentage = VALUES(percentage),
+        brokerage_percent = VALUES(brokerage_percent),
+        gst_percent = VALUES(gst_percent),
+        stt_percent = VALUES(stt_percent),
+        transaction_tax_percent = VALUES(transaction_tax_percent),
         is_active = 1
       `,
-      [user_id, percentage]
+      [
+        user_id,
+        brokerage_percent,
+        gst_percent,
+        stt_percent,
+        transaction_tax_percent,
+      ]
     );
 
     sendSuccess(
       res,
       {
         user_id,
-        percentage,
+        brokerage_percent,
+        gst_percent,
+        stt_percent,
+        transaction_tax_percent,
       },
-      "User brokerage & tax percentage set successfully"
+      "User percentage settings updated"
     );
-  } catch (error) {
-    console.error(error);
-    sendError(res, 500, "Failed to set percentage");
+  } catch (err) {
+    console.error(err);
+    sendError(res, 500, "Failed to update settings");
   }
 };
 
 //get user percentage
+
 export const getUserPercentageByAdmin = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.params.userId; // <-- IMPORTANT
 
-    const [rows] = await pool.execute(
-      `SELECT percentage, is_active FROM user_percentage_settings WHERE user_id = ?`,
+    // Get stocks
+    const [stocks] = await pool.execute(
+      `SELECT current_price, quantity FROM stocks WHERE user_id = ?`,
       [userId]
     );
 
-    sendSuccess(res, rows[0] || { percentage: 5.0 }, "User percentage fetched");
-  } catch (error) {
-    sendError(res, 500, "Error fetching percentage");
+    let subtotal = 0;
+    stocks.forEach((s) => {
+      subtotal += s.current_price * s.quantity;
+    });
+
+    // Fetch user percentage settings
+    const [settings] = await pool.execute(
+      `SELECT * FROM user_percentage_settings
+   WHERE user_id = ? AND is_active = 1
+   ORDER BY updated_at DESC
+   LIMIT 1`,
+      [userId]
+    );
+
+    if (!settings.length) {
+      return sendSuccess(
+        res,
+        { subtotal, charges: {}, net_value: subtotal },
+        "No percentage set — charges 0"
+      );
+    }
+
+    const p = settings[0];
+
+    const brokerage = subtotal * (p.brokerage_percent / 100);
+    const gst = brokerage * (p.gst_percent / 100);
+    const stt = subtotal * (p.stt_percent / 100);
+    const txn_tax = subtotal * (p.transaction_tax_percent / 100);
+
+    const net_value = subtotal - (brokerage + gst + stt + txn_tax);
+
+    sendSuccess(res, {
+      subtotal,
+      brokerage,
+      gst,
+      stt,
+      txn_tax,
+      net_value,
+    });
+  } catch (err) {
+    console.error(err);
+    sendError(res, 500, "Failed to load trade summary");
   }
 };
