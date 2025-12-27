@@ -515,7 +515,6 @@ export const getUserStocks = async (req, res) => {
   }
 };
 
-
 //  ADMIN - Get All Stocks of Any User
 export const getUserStocksByAdmin = async (req, res) => {
   try {
@@ -805,5 +804,61 @@ export const getUserPercentageByAdmin = async (req, res) => {
   } catch (err) {
     console.error(err);
     sendError(res, 500, "Failed to load trade summary");
+  }
+};
+
+// USER - Get My Trade Summary
+export const getMyTradeSummary = async (req, res) => {
+  try {
+    const userId = req.user.id; //Logged-in user's id from token
+
+    // Get user's stocks
+    const [stocks] = await pool.execute(
+      `SELECT current_price, quantity FROM stocks WHERE user_id = ?`,
+      [userId]
+    );
+
+    let subtotal = 0;
+    stocks.forEach((s) => {
+      subtotal += s.current_price * s.quantity;
+    });
+
+    // Get user's percentage settings
+    const [settings] = await pool.execute(
+      `SELECT * FROM user_percentage_settings
+       WHERE user_id = ? AND is_active = 1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!settings.length) {
+      return sendSuccess(
+        res,
+        { subtotal, charges: {}, net_value: subtotal },
+        "No percentage set — charges 0"
+      );
+    }
+
+    const p = settings[0];
+
+    const brokerage = subtotal * (p.brokerage_percent / 100);
+    const gst = brokerage * (p.gst_percent / 100);
+    const stt = subtotal * (p.stt_percent / 100);
+    const txn_tax = subtotal * (p.transaction_tax_percent / 100);
+
+    const net_value = subtotal - (brokerage + gst + stt + txn_tax);
+
+    return sendSuccess(res, {
+      subtotal,
+      brokerage,
+      gst,
+      stt,
+      txn_tax,
+      net_value,
+    });
+  } catch (err) {
+    console.error(err);
+    return sendError(res, 500, "Failed to load trade summary");
   }
 };

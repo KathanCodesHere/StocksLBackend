@@ -9,6 +9,7 @@ import {
   getUserStocksByAdmin,
   setUserPercentage,
   getUserPercentageByAdmin,
+  getMyTradeSummary,
 } from "../controller/stock.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import { adminOnly } from "../middleware/adminRole.middleware.js";
@@ -45,4 +46,8 @@ router.get(
   adminOnly,
   getUserPercentageByAdmin
 );
+
+// USER — View own trade summary
+router.get("/user/trade-summary", verifyToken, getMyTradeSummary);
+
 export default router;
