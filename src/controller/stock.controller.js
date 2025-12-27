@@ -34,58 +34,53 @@ export const addStock = (req, res) => {
     }
 
     try {
-      // Destructure with default values
       const {
         stock_name,
         stock_symbol,
         stock_buy_price,
         current_price,
+        stock_sell_price,
         quantity,
         purchase_date,
         userId,
+        status = "active",
       } = req.body;
 
-      console.log("Received data:", req.body);
-
-      // Detailed validation
-      if (!stock_name || stock_name.trim() === "") {
-        return res.status(400).json({
-          success: false,
-          message: "Stock name is required",
-        });
-      }
-
-      if (!stock_buy_price || isNaN(stock_buy_price)) {
-        return res.status(400).json({
-          success: false,
-          message: "Valid buy price is required",
-        });
+      /* ---------- VALIDATION ---------- */
+      if (!stock_name?.trim()) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Stock name is required" });
       }
 
       if (!quantity || isNaN(quantity)) {
-        return res.status(400).json({
-          success: false,
-          message: "Valid quantity is required",
-        });
-      }
-
-      if (!purchase_date) {
-        return res.status(400).json({
-          success: false,
-          message: "Purchase date is required",
-        });
+        return res
+          .status(400)
+          .json({ success: false, message: "Valid quantity is required" });
       }
 
       if (!userId) {
-        return res.status(400).json({
-          success: false,
-          message: "User ID is required",
-        });
+        return res
+          .status(400)
+          .json({ success: false, message: "User ID is required" });
       }
 
+      /* ---------- PURCHASE DATE (AUTO TODAY IF EMPTY) ---------- */
+      //    const purchaseDate = purchase_date
+      // ? new Date(purchase_date).toISOString().split("T")[0]
+      // : new Date().toISOString().split("T")[0];
+
+      let purchaseDate;
+
+      if (purchase_date && !isNaN(Date.parse(purchase_date))) {
+        purchaseDate = new Date(purchase_date).toISOString().split("T")[0];
+      } else {
+        purchaseDate = new Date().toISOString().split("T")[0];
+      }
+
+      /* ---------- FILE UPLOAD ---------- */
       let imageUrl = null;
 
-      // Handle file upload
       if (req.file) {
         try {
           const uploadResult = await new Promise((resolve, reject) => {
@@ -95,68 +90,58 @@ export const addStock = (req, res) => {
                 public_id: `stock_${Date.now()}`,
                 resource_type: "auto",
               },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-              }
+              (error, result) => (error ? reject(error) : resolve(result))
             );
 
             uploadStream.end(req.file.buffer);
           });
 
           imageUrl = uploadResult.secure_url;
-          console.log("Image uploaded:", imageUrl);
         } catch (uploadError) {
           console.error("Cloudinary upload error:", uploadError);
-          // Image upload fail hua toh bhi continue karein
         }
       }
 
-      // Convert values with proper null handling
-      const parsedBuyPrice = parseFloat(stock_buy_price);
-      const parsedCurrentPrice = current_price
-        ? parseFloat(current_price)
-        : parsedBuyPrice;
+      /* ---------- SAFE NUMBER PARSING ---------- */
+      const parsedBuyPrice =
+        stock_buy_price && !isNaN(stock_buy_price)
+          ? parseFloat(stock_buy_price)
+          : null;
+
+      const parsedCurrentPrice =
+        current_price && !isNaN(current_price)
+          ? parseFloat(current_price)
+          : parsedBuyPrice;
+
+      const parsedSellPrice =
+        stock_sell_price && !isNaN(stock_sell_price)
+          ? parseFloat(stock_sell_price)
+          : null;
+
       const parsedQuantity = parseInt(quantity);
 
-      // Check for NaN after parsing
-      if (isNaN(parsedBuyPrice) || isNaN(parsedQuantity)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid numeric values",
-        });
-      }
-
-      console.log("Inserting with values:", {
-        userId,
-        stock_name,
-        stock_symbol: stock_symbol || null,
-        buyPrice: parsedBuyPrice,
-        currentPrice: parsedCurrentPrice,
-        quantity: parsedQuantity,
-        purchase_date,
-        imageUrl,
-      });
-
-      // FIXED: Proper null handling for all parameters
+      /* ---------- DB INSERT ---------- */
       const [result] = await pool.execute(
         `INSERT INTO stocks 
-         (user_id, stock_name,  stock_buy_price, 
-          current_price, quantity, purchase_date, image_url) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, stock_name, stock_symbol, stock_buy_price,
+         current_price, stock_sell_price, quantity, purchase_date,
+         status, image_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           stock_name,
-
+          stock_symbol || null,
           parsedBuyPrice,
           parsedCurrentPrice,
+          parsedSellPrice,
           parsedQuantity,
-          purchase_date,
-          imageUrl, // null if no image
+          purchaseDate, // <-- FINAL DATE VALUE
+          status,
+          imageUrl,
         ]
       );
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "Stock added successfully",
         stock_id: result.insertId,
@@ -164,13 +149,14 @@ export const addStock = (req, res) => {
         data: {
           stock_name,
           buy_price: parsedBuyPrice,
+          sell_price: parsedSellPrice,
           quantity: parsedQuantity,
+          status,
+          purchase_date: purchaseDate,
         },
       });
     } catch (error) {
       console.error("Add stock error:", error);
-      console.error("Error details:", error.message);
-      console.error("Request body:", req.body);
 
       res.status(500).json({
         success: false,
@@ -182,80 +168,145 @@ export const addStock = (req, res) => {
   });
 };
 
+//update stock
 export const updateStock = (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
       return res.status(400).json({
         success: false,
-        message: err.message,
+        message: err.message || "Error uploading file",
       });
     }
 
     try {
-      let stockIdStr = req.params.id;
-      if (stockIdStr.startsWith(":")) {
-        stockIdStr = stockIdStr.substring(1);
-      }
-
-      const stockId = parseInt(stockIdStr);
-      const userId = parseInt(req.body.userId);
-
-      console.log("Stock ID:", stockId, "User ID:", userId);
+      let stockId = parseInt(req.params.id);
+      const {
+        stock_name,
+        stock_symbol,
+        stock_buy_price,
+        current_price,
+        stock_sell_price,
+        quantity,
+        purchase_date,
+        userId,
+        status,
+      } = req.body;
 
       if (isNaN(stockId)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid Stock ID: ${req.params.id}`,
+          message: "Invalid stock ID",
         });
       }
 
       if (!userId || isNaN(userId)) {
         return res.status(400).json({
           success: false,
-          message: "Valid User ID required",
+          message: "Valid User ID is required",
         });
       }
 
-      // Check stock exists
+      /* ---------- CHECK STOCK EXISTS ---------- */
       const [existing] = await pool.execute(
         `SELECT * FROM stocks WHERE stock_id = ? AND user_id = ?`,
         [stockId, userId]
       );
 
-      if (existing.length === 0) {
+      if (!existing.length) {
         return res.status(404).json({
           success: false,
           message: "Stock not found",
         });
       }
 
-      // Prepare updates WITHOUT updated_at
+      /* ---------- HANDLE PURCHASE DATE ---------- */
+      let purchaseDate = existing[0].purchase_date;
+
+      if (purchase_date && !isNaN(Date.parse(purchase_date))) {
+        purchaseDate = new Date(purchase_date).toISOString().split("T")[0];
+      }
+
+      /* ---------- FILE UPLOAD (OPTIONAL) ---------- */
+      let imageUrl = existing[0].image_url;
+
+      if (req.file) {
+        try {
+          const uploadResult = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                folder: "stock_images",
+                public_id: `stock_${Date.now()}`,
+                resource_type: "auto",
+              },
+              (error, result) => (error ? reject(error) : resolve(result))
+            );
+
+            uploadStream.end(req.file.buffer);
+          });
+
+          imageUrl = uploadResult.secure_url;
+        } catch (uploadError) {
+          console.error("Cloudinary upload error:", uploadError);
+        }
+      }
+
+      /* ---------- SAFE NUMBER PARSING ---------- */
+      const parsedBuyPrice =
+        stock_buy_price && !isNaN(stock_buy_price)
+          ? parseFloat(stock_buy_price)
+          : existing[0].stock_buy_price;
+
+      const parsedCurrentPrice =
+        current_price && !isNaN(current_price)
+          ? parseFloat(current_price)
+          : parsedBuyPrice;
+
+      const parsedSellPrice =
+        stock_sell_price && !isNaN(stock_sell_price)
+          ? parseFloat(stock_sell_price)
+          : existing[0].stock_sell_price;
+
+      const parsedQuantity =
+        quantity && !isNaN(quantity)
+          ? parseInt(quantity)
+          : existing[0].quantity;
+
+      /* ---------- BUILD UPDATE FIELDS ---------- */
       const updates = [];
       const values = [];
 
-      const { stock_buy_price, current_price } = req.body;
-
-      if (stock_buy_price && !isNaN(parseFloat(stock_buy_price))) {
-        updates.push("stock_buy_price = ?");
-        values.push(parseFloat(stock_buy_price));
+      if (stock_name) {
+        updates.push("stock_name = ?");
+        values.push(stock_name);
       }
 
-      if (current_price && !isNaN(parseFloat(current_price))) {
-        updates.push("current_price = ?");
-        values.push(parseFloat(current_price));
+      if (stock_symbol !== undefined) {
+        updates.push("stock_symbol = ?");
+        values.push(stock_symbol || null);
       }
 
-      // Add other fields as needed...
+      updates.push("stock_buy_price = ?");
+      values.push(parsedBuyPrice);
 
-      if (updates.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "No fields to update",
-        });
+      updates.push("current_price = ?");
+      values.push(parsedCurrentPrice);
+
+      updates.push("stock_sell_price = ?");
+      values.push(parsedSellPrice);
+
+      updates.push("quantity = ?");
+      values.push(parsedQuantity);
+
+      updates.push("purchase_date = ?");
+      values.push(purchaseDate);
+
+      if (status) {
+        updates.push("status = ?");
+        values.push(status);
       }
 
-      // ❌ REMOVE THIS LINE if you don't have updated_at column
-      // updates.push("updated_at = NOW()");
+      updates.push("image_url = ?");
+      values.push(imageUrl);
 
       values.push(stockId, userId);
 
@@ -263,26 +314,30 @@ export const updateStock = (req, res) => {
         ", "
       )} WHERE stock_id = ? AND user_id = ?`;
 
-      console.log("Query:", query);
-      console.log("Values:", values);
-
       const [result] = await pool.execute(query, values);
 
-      res.json({
+      return res.json({
         success: true,
         message: "Stock updated successfully",
+        stock_id: stockId,
+        affected_rows: result.affectedRows,
         data: {
-          stock_id: stockId,
-          user_id: userId,
-          affected_rows: result.affectedRows,
+          stock_name,
+          buy_price: parsedBuyPrice,
+          sell_price: parsedSellPrice,
+          quantity: parsedQuantity,
+          status,
+          purchase_date: purchaseDate,
+          image_url: imageUrl,
         },
       });
     } catch (error) {
-      console.error("Update error:", error);
+      console.error("Update stock error:", error);
       res.status(500).json({
         success: false,
-        message: "Update failed",
-        error: error.sqlMessage || error.message,
+        message: "Error updating stock",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   });
@@ -373,7 +428,6 @@ export const deleteStock = async (req, res) => {
 };
 
 // GET USER'S STOCKS - User gets their own stocks (from req.user.id)
-// GET USER'S OWN STOCKS (Same logic as Admin API with charges breakdown)
 export const getUserStocks = async (req, res) => {
   try {
     const userId = Number(req.user.id);
@@ -381,13 +435,14 @@ export const getUserStocks = async (req, res) => {
 
     console.log(`Fetching stocks for User ID: ${userId}`);
 
-    // Build stock query
+    // Build query with new field
     let query = `
       SELECT 
         stock_id,
         stock_name,
         stock_buy_price,
         current_price,
+        stock_sell_price,
         quantity,
         purchase_date,
         image_url,
@@ -441,13 +496,14 @@ export const getUserStocks = async (req, res) => {
     const enhancedStocks = stocks.map((stock) => {
       const buy = Number(stock.stock_buy_price);
       const cur = Number(stock.current_price);
+      const sell = Number(stock.stock_sell_price || 0); // ⬅️ NEW
       const qty = Number(stock.quantity);
 
       const investment = buy * qty;
       const currentValue = cur * qty;
       const profit = currentValue - investment;
 
-      // Charges applied only on profit
+      // Charges on profit
       const brokerage =
         profit > 0 ? (profit * charges.brokerage_percent) / 100 : 0;
       const gst = brokerage * (charges.gst_percent / 100);
@@ -461,6 +517,17 @@ export const getUserStocks = async (req, res) => {
       totalCurrentValue += currentValue;
       grossProfitLoss += profit;
       finalCharges += totalChargeForStock;
+
+      /* ---------- OPTIONAL: SELL PRICE ANALYTICS ---------- */
+      let targetProfit = null;
+      let targetProfitPercent = null;
+
+      if (sell && sell > 0) {
+        const targetValue = sell * qty;
+        targetProfit = targetValue - investment;
+        targetProfitPercent =
+          investment > 0 ? (targetProfit / investment) * 100 : 0;
+      }
 
       return {
         ...stock,
@@ -479,6 +546,13 @@ export const getUserStocks = async (req, res) => {
         net_profit_loss: (profit - totalChargeForStock).toFixed(2),
         profit_loss_percentage:
           investment > 0 ? ((profit / investment) * 100).toFixed(2) : "0.00",
+
+        stock_sell_price: sell || null, // ⬅️ RETURN IN RESPONSE
+
+        target_profit: targetProfit ? targetProfit.toFixed(2) : null, // OPTIONAL EXTRA INSIGHT
+        target_profit_percentage: targetProfitPercent
+          ? targetProfitPercent.toFixed(2)
+          : null,
       };
     });
 
@@ -547,11 +621,12 @@ export const getUserStocksByAdmin = async (req, res) => {
 
     //Build stock query
     let query = `
-      SELECT 
+      SELECT
         stock_id,
         stock_name,
         stock_buy_price,
         current_price,
+        stock_sell_price,
         quantity,
         purchase_date,
         image_url,
@@ -603,46 +678,48 @@ export const getUserStocksByAdmin = async (req, res) => {
     let finalCharges = 0; // <-- define here
 
     const enhancedStocks = stocks.map((stock) => {
-      const buy = Number(stock.stock_buy_price);
-      const cur = Number(stock.current_price);
-      const qty = Number(stock.quantity);
+  const buy = Number(stock.stock_buy_price);
+  const cur = Number(stock.current_price);
+  const sell = Number(stock.stock_sell_price || 0); // ADDED
+  const qty = Number(stock.quantity);
 
-      const investment = buy * qty;
-      const currentValue = cur * qty;
-      const profit = currentValue - investment;
+  const investment = buy * qty;
+  const currentValue = cur * qty;
+  const profit = currentValue - investment;
 
-      const brokerage =
-        profit > 0 ? (profit * charges.brokerage_percent) / 100 : 0;
-      const gst = brokerage * (charges.gst_percent / 100);
-      const stt = profit > 0 ? (profit * charges.stt_percent) / 100 : 0;
-      const txnTax =
-        profit > 0 ? (profit * charges.transaction_tax_percent) / 100 : 0;
+  const brokerage =
+    profit > 0 ? (profit * charges.brokerage_percent) / 100 : 0;
+  const gst = brokerage * (charges.gst_percent / 100);
+  const stt = profit > 0 ? (profit * charges.stt_percent) / 100 : 0;
+  const txnTax =
+    profit > 0 ? (profit * charges.transaction_tax_percent) / 100 : 0;
 
-      const totalChargeForStock = brokerage + gst + stt + txnTax;
+  const totalChargeForStock = brokerage + gst + stt + txnTax;
 
-      totalInvestment += investment;
-      totalCurrentValue += currentValue;
-      grossProfitLoss += profit;
-      finalCharges += totalChargeForStock;
+  totalInvestment += investment;
+  totalCurrentValue += currentValue;
+  grossProfitLoss += profit;
+  finalCharges += totalChargeForStock;
 
-      return {
-        ...stock,
+  return {
+    ...stock,
+    stock_sell_price: sell || null, //RETURNED
 
-        investment: investment.toFixed(2),
-        profit_loss: profit.toFixed(2),
+    investment: investment.toFixed(2),
+    profit_loss: profit.toFixed(2),
 
-        // NEW BREAKDOWN BLOCK
-        charges_breakdown: {
-          brokerage: brokerage.toFixed(2),
-          gst: gst.toFixed(2),
-          stt: stt.toFixed(2),
-          transaction_tax: txnTax.toFixed(2),
-        },
+    charges_breakdown: {
+      brokerage: brokerage.toFixed(2),
+      gst: gst.toFixed(2),
+      stt: stt.toFixed(2),
+      transaction_tax: txnTax.toFixed(2),
+    },
 
-        charges: totalChargeForStock.toFixed(2),
-        net_profit_loss: (profit - totalChargeForStock).toFixed(2),
-      };
-    });
+    charges: totalChargeForStock.toFixed(2),
+    net_profit_loss: (profit - totalChargeForStock).toFixed(2),
+  };
+});
+
 
     const netProfitLoss = grossProfitLoss - finalCharges;
     const netProfitLossPercentage =
@@ -680,7 +757,6 @@ export const getUserStocksByAdmin = async (req, res) => {
 };
 
 //admin set percentage
-
 export const setUserPercentage = async (req, res) => {
   try {
     const {
