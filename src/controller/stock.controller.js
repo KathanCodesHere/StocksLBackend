@@ -123,14 +123,14 @@ export const addStock = (req, res) => {
       /* ---------- DB INSERT ---------- */
       const [result] = await pool.execute(
         `INSERT INTO stocks 
-        (user_id, stock_name, stock_symbol, stock_buy_price,
+        (user_id, stock_name, stock_buy_price,
          current_price, stock_sell_price, quantity, purchase_date,
          status, image_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           stock_name,
-          stock_symbol || null,
+          // stock_symbol || null,
           parsedBuyPrice,
           parsedCurrentPrice,
           parsedSellPrice,
