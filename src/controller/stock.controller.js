@@ -906,8 +906,8 @@ export const getMyTradeSummary = async (req, res) => {
        WHERE user_id = ?`,
       [userId]
     );
-
-    let totalProfit = 0;
+    // console.log(stocks);
+    var totalProfit = 0;
 
     stocks.forEach((s) => {
       const buy = Number(s.stock_buy_price);
@@ -918,6 +918,7 @@ export const getMyTradeSummary = async (req, res) => {
       const currentValue = cur * qty;
 
       totalProfit += currentValue - investment;
+      // console.log("total: ",totalProfit);
     });
 
     const [settings] = await pool.execute(
@@ -928,16 +929,19 @@ export const getMyTradeSummary = async (req, res) => {
        LIMIT 1`,
       [userId]
     );
-
-    const p = settings[0] || {
-      brokerage_percent: 0,
-      gst_percent: 0,
-      stt_percent: 0,
-      transaction_tax_percent: 0,
-    };
+    // console.log(settings);
+    const p = settings[0];
+    
+// const p = settings[0] || {
+//       brokerage_percent: 0,
+//       gst_percent: 0,
+//       stt_percent: 0,
+//       transaction_tax_percent: 0,
+//     };
 
     const profitBase = totalProfit > 0 ? totalProfit : 0;
-
+    // const profitBase = totalProfit;
+    // console.log("profit base: ",profitBase);
     const brokerage = profitBase * (p.brokerage_percent / 100);
     const gst = brokerage * (p.gst_percent / 100);
     const stt = profitBase * (p.stt_percent / 100);
