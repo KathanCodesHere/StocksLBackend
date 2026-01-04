@@ -84,6 +84,7 @@ export const updatePaymentMethod = async (req, res) => {
 
     // ✅ Convert all undefined to null
     const account_number = body.account_number ?? null;
+    const account_holder_name = body.account_holder_name ?? null;
     const ifsc_code = body.ifsc_code ?? null;
     const bank_name = body.bank_name ?? null;
     const branch_name = body.branch_name ?? null;
@@ -122,6 +123,7 @@ export const updatePaymentMethod = async (req, res) => {
       `UPDATE admin_payment_methods 
        SET qr_image_url = ?,
            account_number = ?,
+           account_holder_name = ?,
            ifsc_code = ?,
            bank_name = ?,
            branch_name = ?,
@@ -131,6 +133,7 @@ export const updatePaymentMethod = async (req, res) => {
       [
         qr_image_url ?? null,
         account_number ?? null,
+        account_holder_name ?? null,
         ifsc_code ?? null,
         bank_name ?? null,
         branch_name ?? null,
