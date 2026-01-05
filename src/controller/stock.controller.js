@@ -870,23 +870,40 @@ export const getUserPercentageByAdmin = async (req, res) => {
     };
 
     // Apply charges ONLY on positive profit
-    const profitBase = totalProfit > 0 ? totalProfit : 0;
+    // const profitBase = totalProfit > 0 ? totalProfit : 0;
 
-    const brokerage = profitBase * (p.brokerage_percent / 100);
-    const gst = brokerage * (p.gst_percent / 100);
-    const stt = profitBase * (p.stt_percent / 100);
-    const txn_tax = profitBase * (p.transaction_tax_percent / 100);
+    // const brokerage = profitBase * (p.brokerage_percent / 100);
+    // const gst = brokerage * (p.gst_percent / 100);
+    // const stt = profitBase * (p.stt_percent / 100);
+    // const txn_tax = profitBase * (p.transaction_tax_percent / 100);
 
-    const totalCharges = brokerage + gst + stt + txn_tax;
-    const netValue = totalProfit - totalCharges;
+    // const totalCharges = brokerage + gst + stt + txn_tax;
+    // const netValue = totalProfit - totalCharges;
+
+    //coded by kathan 
+    const profitBase = totalProfit;
+
+    const brokerage = p.brokerage_percent;
+    const gst = p.gst_percent;
+    const stt = p.stt_percent;
+    const txn_tax =p.transaction_tax_percent;
+
+    const totalCharges = Number(brokerage) + Number(gst) + Number(stt) + Number(txn_tax);
+    const netValue = totalProfit + totalCharges;
 
     return sendSuccess(res, {
-      profit: totalProfit.toFixed(2),
-      brokerage: brokerage.toFixed(2),
-      gst: gst.toFixed(2),
-      stt: stt.toFixed(2),
-      txn_tax: txn_tax.toFixed(2),
-      net_value: netValue.toFixed(2),
+      // profit: totalProfit.toFixed(2),
+      // brokerage: brokerage.toFixed(2),
+      // gst: gst.toFixed(2),
+      // stt: stt.toFixed(2),
+      // txn_tax: txn_tax.toFixed(2),
+      // net_value: netValue.toFixed(2),
+      profit: totalProfit,
+      brokerage: brokerage,
+      gst: gst,
+      stt: stt,
+      txn_tax: txn_tax,
+      net_value: netValue,
     });
 
   } catch (err) {
@@ -948,15 +965,21 @@ export const getMyTradeSummary = async (req, res) => {
     const txn_tax = profitBase * (p.transaction_tax_percent / 100);
 
     const totalCharges = brokerage + gst + stt + txn_tax;
-    const netValue = totalProfit - totalCharges;
+    // const netValue = totalProfit - totalCharges;
+    //kathan
+    const netValue = totalProfit + totalCharges;
 
     return sendSuccess(res, {
-      profit: totalProfit.toFixed(2),
-      brokerage: brokerage.toFixed(2),
-      gst: gst.toFixed(2),
-      stt: stt.toFixed(2),
-      txn_tax: txn_tax.toFixed(2),
-      net_value: netValue.toFixed(2),
+      brokerage: p.brokerage_percent,
+      gst: p.gst_percent,
+      stt: p.gst_percent,
+      txn_tax: p.gst_percent,
+      profit_v: totalProfit.toFixed(2),
+      brokerage_v: brokerage.toFixed(2),
+      gst_v: gst.toFixed(2),
+      stt_v: stt.toFixed(2),
+      txn_tax_v: txn_tax.toFixed(2),
+      net_value_v: netValue.toFixed(2),
     });
   } catch (err) {
     console.error(err);
