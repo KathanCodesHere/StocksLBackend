@@ -948,7 +948,7 @@ export const getMyTradeSummary = async (req, res) => {
     );
     // console.log(settings);
     const p = settings[0];
-    
+    console.log(p);
 // const p = settings[0] || {
 //       brokerage_percent: 0,
 //       gst_percent: 0,
@@ -972,8 +972,8 @@ export const getMyTradeSummary = async (req, res) => {
     return sendSuccess(res, {
       brokerage: p.brokerage_percent,
       gst: p.gst_percent,
-      stt: p.gst_percent,
-      txn_tax: p.gst_percent,
+      stt: p.stt_percent,
+      txn_tax: p.transaction_tax_percent,
       profit_v: totalProfit.toFixed(2),
       brokerage_v: brokerage.toFixed(2),
       gst_v: gst.toFixed(2),
