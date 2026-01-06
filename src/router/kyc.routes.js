@@ -3,10 +3,12 @@ import {
   createKYC,
   getKYC,
   getKYCByUser,
+  getKYCByAdmin
 } from "../controller/kyc.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import upload from "../config/multer.config.js";
 
+import { adminOnly } from "../middleware/adminRole.middleware.js";
 const router = express.Router();
 
 router.post(
@@ -24,5 +26,8 @@ router.get("/get", verifyToken, getKYC);
 
 //get kyc for logged in user
 router.get("/getKYCByUser", verifyToken, getKYCByUser);
+
+// GET - Get KYC details for particular user by admin
+router.get("/getKYCByAdmin/:userId", verifyToken, adminOnly, getKYCByAdmin);
 
 export default router;
