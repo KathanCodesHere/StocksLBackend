@@ -216,3 +216,43 @@ export const getKYCByUser = async (req, res) => {
     sendError(res, 500, "Error fetching KYC details");
   }
 };
+
+
+// GET - Get KYC details for particular user by admin
+export const getKYCByAdmin = async (req, res) => {
+  try {
+    const userId = req.params.userId; //force number
+
+    console.log("Fetching KYC for user:", userId);
+
+    const [kyc] = await pool.execute(
+      `SELECT 
+        k.kyc_id,
+        k.full_name,
+        k.email,
+        k.address,
+        k.city,
+        k.state,
+        k.aadhaar_no,
+        k.pan_number,
+        k.account_no,
+        k.bank,
+        k.ifsc,
+        k.aadhaar_image,
+        k.pancard_image
+      FROM kyc k
+      WHERE k.user_id = ?
+      LIMIT 1`,
+      [userId]
+    );
+
+    if (kyc.length === 0) {
+      return sendError(res, 404, "KYC not submitted yet");
+    }
+
+    sendSuccess(res, kyc[0], "KYC details fetched successfully");
+  } catch (error) {
+    console.error("Get my KYC error:", error);
+    sendError(res, 500, "Error fetching KYC details");
+  }
+};
