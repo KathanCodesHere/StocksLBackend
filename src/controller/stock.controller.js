@@ -775,9 +775,11 @@ export const setUserPercentage = async (req, res) => {
       transaction_tax_percent,
     ];
 
-    if (values.some((v) => v === undefined || isNaN(v) || v < 0)) {
-      return sendError(res, 400, "Invalid percentage values");
-    }
+   
+
+    // if (values.some((v) => v === undefined || isNaN(v) || v < 0)) {
+    //   return sendError(res, 400, "Invalid percentage values");
+    // }
 
     // Check user exists
     const [users] = await pool.execute(`SELECT id FROM users WHERE id = ?`, [
@@ -948,7 +950,7 @@ export const getMyTradeSummary = async (req, res) => {
     );
     // console.log(settings);
     const p = settings[0];
-    console.log(p);
+    // console.log(p);
 // const p = settings[0] || {
 //       brokerage_percent: 0,
 //       gst_percent: 0,

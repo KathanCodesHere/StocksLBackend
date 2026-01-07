@@ -9,6 +9,7 @@ import adminPaymentRouter from "./router/admin.payement.router.js";
 import kycRouter from "./router/kyc.routes.js";
 import { verifyEmailConnection } from "./config/email.config.js";
 import stockRouter from "./router/stock.router.js";
+import enquiryRouter from "./router/enquiry.router.js";
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use("/api/widrow", widrowRouter); // widrow
 app.use("/api/admin/payment", adminPaymentRouter);
 app.use("/api/kyc", kycRouter);
 app.use("/api/stocks", stockRouter);
+app.use("/api/enquiry", enquiryRouter);
 
 verifyEmailConnection();
 
