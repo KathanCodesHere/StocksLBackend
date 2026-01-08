@@ -18,3 +18,22 @@ export const addEnquiry=async(req,res)=>{
         })
     }
 } 
+
+export const viewEnquiry=async(req,res)=>{
+    try{
+        const q='select * from enquiry';
+        const [result]=await pool.execute(q);
+        res.json({
+            data:result,
+            message:"Enquiry getting successfully",
+            success:true
+        })
+    }
+    catch(err){
+        console.log(err);
+        res.json({
+            message:"Enquiry not got successfull",
+            success:true
+        })
+    }
+}
