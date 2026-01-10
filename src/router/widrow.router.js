@@ -1,4 +1,5 @@
 import express from "express"; 
+import upload from "../config/multer.config.js";
 import { requestWithdrawal } from "../controller/widrow.conroller.js";
 import { getPendingWithdrawals } from "../controller/widrow.conroller.js";
 import { processWithdrawal , rejectWithdrawal } from "../controller/widrow.conroller.js";
@@ -9,7 +10,7 @@ const router = express.Router()
 
 
 
-router.post("/widrowrequest" , verifyToken , requestWithdrawal) 
+router.post("/widrowrequest" , verifyToken ,upload.single('screenshot'), requestWithdrawal) 
 router.get("/userwidrowhistory" , verifyToken , getMyWithdrawalHistory) 
 router.get("/pendingwidrow" , verifyToken , adminOnly , getPendingWithdrawals)
 router.put("/processwidrowal" , verifyToken , adminOnly ,processWithdrawal)

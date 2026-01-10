@@ -2,12 +2,16 @@ import pool from "../config/database.config.js";
 import { sendError } from "../utils/errorHandler.js";
 import { sendSuccess } from "../utils/responseHandler.js"; 
 import { withdrawalApprovedTemplate , withdrawalRejectedTemplate } from "../utils/emailTemplate.js";
-
+import cloudinary from "../config/cloudanary.config.js";
 
 
 
 export const requestWithdrawal = async (req, res) => {
     try {
+        // Check if file is uploaded
+    if (!req.file) {
+      return sendError(res, 400, 'Please upload payment screenshot');
+    }
         const { amount } = req.body;
         const userId = req.user.id;
 
@@ -24,29 +28,67 @@ export const requestWithdrawal = async (req, res) => {
             [userId]
         );
         const user = users[0];
-
+        console.log(user);
+        console.log(amount);
         if (!user) {
             return sendError(res, 404, 'User not found');
         }
 
-        if (user.total_balance < amount) {
+        if (Number(user.total_balance) < amount) {
             return sendError(res, 400, 'Insufficient balance');
         }
 
+       // Upload to Cloudinary
+           let uploadResult;
+           try {
+             uploadResult = await new Promise((resolve, reject) => {
+               const uploadStream = cloudinary.uploader.upload_stream(
+                 {
+                   folder: 'payments',
+                   public_id: `payment_${userId}_${Date.now()}`,
+                   resource_type: 'image',
+                   transformation: [
+                     { width: 1000, crop: 'limit' },
+                     { quality: 'auto' }
+                   ]
+                 },
+                 (error, result) => {
+                   if (error) {
+                     console.error('Cloudinary upload error:', error);
+                     reject(new Error('Failed to upload image to cloud'));
+                   } else {
+                     resolve(result);
+                   }
+                 }
+               );
        
+               uploadStream.end(req.file.buffer);
+             });
+           } catch (uploadError) {
+             return sendError(res, 500, 'Failed to upload image. Please try again.');
+           }
 
         // Create withdrawal request
         const [result] = await pool.execute(
             `INSERT INTO withdrawal_requests 
-             (user_id, amount) 
-             VALUES (?, ?)`,
-            [userId, amount]
+             (user_id, screenshot_url, original_filename, file_size, mime_type, 
+        amount, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+            [
+                userId,
+        uploadResult.secure_url,        // Cloudinary URL
+        req.file.originalname,          // Original filename
+        req.file.size,                  // File size in bytes
+        req.file.mimetype,              // MIME type
+        parseFloat(amount),             // Convert to number
+        ]
         );
 
         console.log(` Withdrawal request created: ${result.insertId}`);
 
         sendSuccess(res, {
             withdrawalId: result.insertId,
+            screenshotUrl: uploadResult.secure_url,
             amount: amount,
             status: 'pending'
         }, 'Withdrawal request submitted successfully');
